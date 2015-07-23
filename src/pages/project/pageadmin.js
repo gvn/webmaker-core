@@ -109,11 +109,13 @@ module.exports = {
   removePage: function () {
     var currentId = this.state.selectedEl;
     var index;
+
     this.state.pages.forEach((el, i) => {
       if (el.id === currentId) {
         index = i;
       }
     });
+
     if (typeof index === 'undefined') {
       return;
     }
@@ -125,25 +127,47 @@ module.exports = {
 
     this.setState({loading: true});
 
-    api({
-      method: 'delete',
-      uri: `${this.uri()}/${currentId}`
-    }, (err) => {
-      this.setState({loading: false});
-      if (err) {
-        return reportError('There was an error deleting the page', err);
-      }
+    debugger;
 
-      this.cartesian.allCoords.splice(index, 1);
-      var newZoom = this.state.matrix[0] >= MAX_ZOOM ? DEFAULT_ZOOM : this.state.matrix[0];
-      var x = this.state.matrix[4];
-      var y = this.state.matrix[5];
-      this.setState({
-        pages: update(this.state.pages, {$splice: [[index, 1]]}),
-        matrix: [newZoom, 0, 0, newZoom, x, y],
-        selectedEl: ''
+    // Make a clone of `pages` to patch
+    var patchedPages = JSON.parse(JSON.stringify(this.state.pages));
+
+    // Remove deleted page
+    patchedPages = update(patchedPages, {$splice: [[index, 1]]});
+
+    console.log(patchedPages);
+
+    // Un-set link destinations for any links within the current project to the deleted page
+    patchedPages.forEach(function (page, pageIndex) {
+      page.elements.forEach(function (element, elementIndex) {
+        if (element.type === 'link' && element.targetPageId === currentId) { // TODO: More strict matching?
+          // console.log('found a dead link');
+          // debugger;
+          patchedPages[pageIndex].elements[elementIndex].targetPageId = '';
+          patchedPages[pageIndex].elements[elementIndex].targetProjectId = '';
+          patchedPages[pageIndex].elements[elementIndex].targetUserId = '';
+        }
       });
     });
+
+    // Update state & UI
+    this.cartesian.allCoords.splice(index, 1);
+
+    var newZoom = this.state.matrix[0] >= MAX_ZOOM ? DEFAULT_ZOOM : this.state.matrix[0];
+    var x = this.state.matrix[4];
+    var y = this.state.matrix[5];
+
+    this.setState({
+      pages: patchedPages,
+      matrix: [newZoom, 0, 0, newZoom, x, y],
+      selectedEl: '',
+      loading: false
+    });
+
+    console.log(patchedPages);
+
+    // TODO : send PATCH to /users/{user}/projects/{project}
+    // TODO : put `Update state & UI` into XHR success callback
   },
 
   onPageClick: function (page) {
